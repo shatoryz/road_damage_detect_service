@@ -1,0 +1,38 @@
+[
+  {
+    "coordinates": [
+      55.788242,
+      38.929077
+    ],
+    "image": "detection_170_2026-02-20_14-03-35.jpg",
+    "title": "...",
+    "description": "Время: 2026-02-20 14:03:35 | Объекты: D11_construction_joint_lateral (0.76)"
+  },
+  {
+    "coordinates": [
+      55.788242,
+      38.929077
+    ],
+    "image": "detection_237_2026-02-20_14-03-40.jpg",
+    "title": "...",
+    "description": "Время: 2026-02-20 14:03:40 | Объекты: D10_equal_interval_lateral (0.72)"
+  },
+  {
+    "coordinates": [
+      55.788242,
+      38.929077
+    ],
+    "image": "detection_321_2026-02-20_14-03-45.jpg",
+    "title": "...",
+    "description": "Время: 2026-02-20 14:03:45 | Объекты: D11_construction_joint_lateral (0.73)"
+  },
+  {
+    "coordinates": [
+      55.788242,
+      38.929077
+    ],
+    "image": "detection_390_2026-02-20_14-03-50.jpg",
+    "title": "...",
+    "description": "Время: 2026-02-20 14:03:50 | Объекты: D10_equal_interval_lateral (0.78)"
+  }
+]

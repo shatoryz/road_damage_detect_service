@@ -1,0 +1,24 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Загрузка файлов на Flask</title>
+  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <h1>Загрузка файлов</h1>
+
+  <form id="uploadForm" enctype="multipart/form-data">
+    <label for="fileInput">Выберите файл:</label>
+    <input type="file" id="fileInput" name="fileToUpload" required>
+    <button type="submit">Загрузить</button>
+  </form>
+
+  <p id="result"></p>
+  <img id="preview" src="" alt="Preview" width="200" style="display:none; margin-top:10px;">
+
+  <script src="/static/js/script.js"></script>
+</body>
+</html>

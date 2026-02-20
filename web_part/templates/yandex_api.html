@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/icons/mops_ico.jpg" type="image/jpeg" />
+    <title>Карта с YOLO</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=ВАШКЛЮЧlang=ru_RU"></script>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: Arial, sans-serif; }
+        #map { width: 70%; height: 100%; }
+        #panel { width: 30%; padding: 20px; background: #f5f5f5; overflow-y: auto; border-left: 1px solid #ddd; }
+        h2 { margin: 0 0 15px 0; font-size: 18px; color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 10px; }
+        .section { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input[type="file"] { width: 100%; margin-bottom: 10px; }
+        button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin: 5px 5px 5px 0; font-size: 14px; }
+        .btn-primary { background: #2196F3; color: white; }
+        .btn-success { background: #4CAF50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { padding: 10px; border-radius: 4px; margin-top: 10px; font-size: 14px; }
+        .status.success { background: #e8f5e9; color: #2e7d32; }
+        .status.error { background: #ffebee; color: #c62828; }
+        .status.warning { background: #fff3e0; color: #e65100; }
+        .status.info { background: #e3f2fd; color: #1565c0; }
+        .yolo-info { background: #f3e5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; border: 1px solid #e1bee7; }
+        .markers-count { background: #fff3e0; padding: 10px; border-radius: 4px; margin-bottom: 15px; border: 1px solid #ffe0b2; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 11px; overflow-x: auto; }
+        .loading { display: inline-block; width: 14px; height: 14px; border: 2px solid #f3f3f3; border-top: 2px solid #2196F3; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 5px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .balloon { padding: 10px; max-width: 300px; font-family: Arial, sans-serif; }
+        .balloon h3 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
+        .balloon p { margin: 5px 0; font-size: 14px; color: #666; }
+        .balloon img { max-width: 100%; max-height: 200px; border-radius: 5px; margin-top: 10px; display: block; }
+        .balloon .objects { margin-top: 10px; padding: 8px; background: #f5f5f5; border-radius: 3px; font-size: 12px; }
+        .balloon .tag { display: inline-block; background: #2196F3; color: white; padding: 2px 6px; border-radius: 3px; margin: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+    <div class="yolo-info">
+        <strong>road_detection активен</strong><br>
+        Изображения без объектов не сохраняются
+    </div>
+
+    <div class="markers-count">
+        <strong>Всего меток: <span id="markersCount">0</span></strong>
+    </div>
+
+    <div class="section">
+        <h2>1. Загрузка изображений</h2>
+        <form id="imgForm">
+            <input type="file" id="imgInput" name="fileToUpload" accept="image/*" multiple required>
+            <button type="submit" class="btn-primary" id="uploadBtn">Загрузить</button>
+            <button type="button" class="btn-success" onclick="loadImages()">Обновить список</button>
+            <div id="imgStatus" class="status" style="display:none;"></div>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>2. Загрузка JSON</h2>
+        <pre>[{"coordinates": [55.76, 37.64], "image": "file.jpg", "title": "Место"}]</pre>
+        <form id="jsonForm">
+            <input type="file" id="jsonInput" name="fileToUpload" accept=".json" required>
+            <button type="submit" class="btn-primary" id="saveBtn">Сохранить метки</button>
+            <div id="jsonStatus" class="status" style="display:none;"></div>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>3. Управление</h2>
+        <button class="btn-success" onclick="loadMarkers()">Загрузить с сервера</button>
+        <button class="btn-danger" onclick="clearMap()">Очистить карту</button>
+        <button class="btn-danger" onclick="clearServer()">Удалить всё</button>
+    </div>
+</div>
+
+<script>
+    var myMap, objectManager, serverImages = {}, currentMarkers = [];
+
+    ymaps.ready(init);
+
+    function init() {
+        myMap = new ymaps.Map("map", {
+            center: [55.76, 37.64],
+            zoom: 10
+        });
+
+        objectManager = new ymaps.ObjectManager({
+            clusterize: true,
+            gridSize: 32,
+            clusterDisableClickZoom: true
+        });
+
+        objectManager.objects.options.set("preset", "islands#blueDotIcon");
+        objectManager.clusters.options.set("preset", "islands#blueClusterIcons");
+
+        myMap.geoObjects.add(objectManager);
+
+        loadMarkers();
+        loadImages();
+    }
+
+    document.getElementById('imgForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const files = document.getElementById('imgInput').files;
+        if (!files.length) return showStatus('imgStatus', 'Выберите файлы', 'error');
+
+        const btn = document.getElementById('uploadBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span>Проверка YOLO...';
+        const formData = new FormData();
+        for (let f of files) formData.append('fileToUpload', f);
+
+        try {
+            const res = await fetch('/upload_images', {method: 'POST', body: formData});
+            const data = await res.json();
+
+            let msg = `Загружено: ${data.uploaded}`;
+            if (data.rejected > 0) msg += ` | Отклонено: ${data.rejected}`;
+
+            showStatus('imgStatus', msg, data.rejected > 0 ? 'warning' : 'success');
+
+            if (data.files && data.files.length > 0) {
+                data.files.forEach(img => {
+                    serverImages[img.saved_name] = img.url;
+                    console.log(`Добавлено: ${img.saved_name} → ${img.url}`);
+                });
+            }
+
+            document.getElementById('imgInput').value = '';
+        } catch (err) {
+            showStatus('imgStatus', 'Ошибка: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Загрузить';
+        }
+    });
+
+    async function loadImages() {
+        try {
+            const res = await fetch('/get_images');
+            const images = await res.json();
+
+            serverImages = {};
+            images.forEach(img => {
+                serverImages[img.name] = img.url;
+            });
+
+            showStatus('imgStatus', 'Список изображений обновлен', 'info');
+        } catch (err) {
+            console.error(err);
+            showStatus('imgStatus', 'Ошибка загрузки списка', 'error');
+        }
+    }
+
+    document.getElementById('jsonForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const file = document.getElementById('jsonInput').files[0];
+        if (!file) return showStatus('jsonStatus', 'Выберите JSON', 'error');
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span>Обработка...';
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                createMarkers(data);
+                await saveMarkers(data);
+            } catch (err) {
+                showStatus('jsonStatus', 'Ошибка JSON: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Сохранить метки';
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    async function createMarkers(data) {
+        if (Object.keys(serverImages).length === 0) {
+            console.log('serverImages пуст, загружаем список...');
+            await loadImages();
+        }
+
+        currentMarkers = data;
+        objectManager.removeAll();
+        const features = [];
+
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            const coords = item.coordinates || item.coords;
+
+            if (!coords || !Array.isArray(coords) || coords.length !== 2) {
+                console.warn('Неверные координаты для метки', i);
+                continue;
+            }
+
+            const fileName = item.image || item.img || item.file || '';
+            const title = item.title || item.name || `Метка ${i+1}`;
+            const desc = item.description || item.desc || '';
+
+            console.log(`Маркер ${i}: fileName="${fileName}", serverImages[fileName]=`, serverImages[fileName]);
+
+            const imgUrl = serverImages[fileName] || (fileName ? `/uploads/images/${fileName}` : null);
+            console.log(`imgUrl для "${fileName}":`, imgUrl);
+
+            const objects = (item.detected_objects || []).map(o => ({
+                class: String(o.class || ''),
+                confidence: Number(o.confidence || 0)
+            }));
+
+            const balloonHtml = buildBalloonHtml(title, desc, imgUrl, objects);
+
+            features.push({
+                type: 'Feature',
+                id: i,
+                geometry: { type: 'Point', coordinates: coords },
+                properties: {
+                    balloonContent: balloonHtml,
+                    hintContent: String(title)
+                }
+            });
+        }
+
+        if (features.length) {
+            objectManager.add({ type: 'FeatureCollection', features: features });
+            updateMarkersCount();
+            showStatus('jsonStatus', `Создано меток: ${features.length}`, 'success');
+        } else {
+            showStatus('jsonStatus', 'Нет валидных данных', 'error');
+        }
+    }
+
+    function buildBalloonHtml(title, desc, imgUrl, objects) {
+        const safeTitle = escapeHtml(title);
+        const safeDesc = escapeHtml(desc);
+        const safeImgUrl = imgUrl ? imgUrl.replace(/"/g, '&quot;') : '';
+
+        let html = '<div class="balloon">';
+        html += '<h3>' + safeTitle + '</h3>';
+
+        if (safeDesc) {
+            html += '<p>' + safeDesc + '</p>';
+        }
+
+        if (safeImgUrl) {
+            html += `<img src="${safeImgUrl}"
+                         alt="Изображение"
+                         style="max-width:100%;max-height:200px;border-radius:5px;margin-top:10px;display:block;"
+                         onerror="console.error('Не загружено:', this.src); this.alt='Ошибка'; this.style.border='2px dashed red'; this.style.padding='10px';">`;
+        } else {
+            html += '<p style="color:#999;font-style:italic">Нет изображения</p>';
+        }
+
+        if (objects && objects.length > 0) {
+            const unique = [...new Set(objects.map(o => o.class))].filter(c => c);
+            if (unique.length > 0) {
+                html += '<div class="objects"><strong>Найдено:</strong> ' +
+                    unique.map(c => '<span class="tag">' + escapeHtml(c) + '</span>').join('') +
+                    '</div>';
+            }
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    async function saveMarkers(data) {
+        try {
+            const res = await fetch('/save_markers', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            showStatus('jsonStatus', result.message || 'Сохранено', result.success ? 'success' : 'error');
+        } catch (err) {
+            showStatus('jsonStatus', 'Ошибка: ' + err.message, 'error');
+        }
+    }
+
+    async function loadMarkers() {
+        showStatus('jsonStatus', 'Загрузка...', 'info');
+        try {
+            const res = await fetch('/get_markers');
+            const markers = await res.json();
+            if (markers && markers.length) {
+                createMarkers(markers);
+                showStatus('jsonStatus', `Загружено: ${markers.length}`, 'success');
+            } else {
+                showStatus('jsonStatus', 'Нет сохраненных меток', 'info');
+            }
+        } catch (err) {
+            showStatus('jsonStatus', 'Ошибка: ' + err.message, 'error');
+        }
+    }
+
+    function clearMap() {
+        objectManager.removeAll();
+        currentMarkers = [];
+        updateMarkersCount();
+        showStatus('jsonStatus', 'Карта очищена', 'success');
+    }
+
+    async function clearServer() {
+        if (!confirm('Удалить все метки с сервера?')) return;
+        try {
+            await fetch('/clear_markers', {method: 'POST'});
+            clearMap();
+            showStatus('jsonStatus', 'Удалено с сервера', 'success');
+        } catch (err) {
+            showStatus('jsonStatus', 'Ошибка: ' + err.message, 'error');
+        }
+    }
+
+    function updateMarkersCount() {
+        document.getElementById('markersCount').textContent = currentMarkers.length;
+    }
+
+    function showStatus(id, msg, type) {
+        const el = document.getElementById(id);
+        el.textContent = msg;
+        el.className = `status ${type}`;
+        el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    function escapeHtml(text) {
+        if (!text && text !== 0) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+</script>
+
+</body>
+</html>
